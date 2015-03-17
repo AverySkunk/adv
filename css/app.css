@@ -1,0 +1,28 @@
+body {
+  padding-top: 50px;
+}
+
+#main {
+  padding: 40px 15px;
+}
+
+#player-input {
+	outline: none;
+	font-size: 28px;
+	border: 0px;
+
+	border-bottom: 1px solid #999;
+}
+
+#output {
+
+}
+
+.outputBlock {
+	font-size: 18px;
+	padding: 10px;
+}
+
+.template {
+	display: none;
+}
