@@ -6,8 +6,9 @@
     module.actions = {
         look: function() {
             var text = "You're in a big, empty room, with white walls. ";
-            text += module.getState('keys', 'inInventory') ? "" : "There's a set of keys here. ";
+            text += module.getState('keys', 'inInventory') || module.getState('keys', 'inserted') ? "" : "There's a set of keys here. ";
             text += module.getState('car', 'started') ? "There's a blue compact car not far from you; engine purring obediently. The sound of it echoes off the walls in this vast, empty space. " : "There's a blue compact car not far from you. It sits dormant. ";
+            text += module.getState('keys', 'inserted') ? "There appear to be keys in the ignition. " : "";
             text += !module.getState('book', 'inInventory') ? "There's a worn book lying on the ground. " : "";
 
             return text;
@@ -25,6 +26,39 @@
             return "You can't do that.";
         }
     };
+
+    module.reserved = [
+        'unknown',
+        'all'
+    ];
+
+    module.synonyms = {
+        /* verbs */
+        'examine': 'look',
+        'grab': 'get',
+        'pick up': 'get',
+        'put down': 'drop',
+        'turn on': 'start',
+        'turn keys': 'start car',
+
+        /* objects */
+        'engine': 'car',
+        'auto': 'car',
+        'vehicle': 'car',
+        'automobile': 'car',
+
+        'tome': 'book',
+        'manual': 'book',
+        "driver's manual": 'book'
+    };
+
+    module.abbreviations = {
+        'l': 'look',
+        'e': 'look',
+        'g': 'get',
+        'd': 'drop',
+        'i': 'inventory'
+    }
 
     module.objects = {
         book: {
@@ -62,15 +96,19 @@
 
             read: function(tokens) {
                 if (module.getState('book', 'inInventory')) {
-                    module.setState('book', 'read', true);
+                    if (module.getState('book', 'read')) {
+                        return "You've already read it, and you don't have all day to read it again.<br /><br />Okay, so you probably do, but that's besides the point.";
+                    } else {
+                        module.setState('book', 'read', true);
 
-                    return "Ah, yes. The owner's manual for your Fiesta. You haven't read this in awhile, and apparently had forgotten how to drive. No matter - it's all coming back to you, now.";
+                        return "Ah, yes. The owner's manual for your Fiesta. You haven't read this in awhile, and apparently had forgotten how to drive. No matter - it's all coming back to you, now.";
+                    }
                 } else {
                     return "You should probably pick up the book first.";
                 }
             },
 
-            examine: function(tokens) {
+            look: function(tokens) {
                 return "This book looks fairly heavy for its size. It appears to have many pages. The pages are worn, but the writing is still legible.";
             }
         },
@@ -86,7 +124,7 @@
                 inserted: false
             },
             
-            examine: function(tokens) {
+            look: function(tokens) {
                 return "The keys are fairly standard in size and shape. There's a nondescript keyring with a few silver, metal keys hanging off of it. There's a tag on the keyring that says, 'Avery's Keys'. Considering that you're Avery, it appears that these keys are your own.";
             },
 
@@ -158,7 +196,7 @@
                 started: false
             },
 
-            examine: function(tokens) {
+            look: function(tokens) {
                 var text = "The car is compact and blue. You aren't sure of the model, ";
                 text += module.getState('car', 'started') ? "but it seems to be running. " : "but you're pretty certain it would run if you tried to start it. ";
                 text += module.getState('keys', 'inserted') ? "The keys are in the ignition. " : "";
@@ -218,6 +256,7 @@
     };
     
     module.init = function() {
+        module.buildVerbList();
         module.cacheElements();
         module.bindPlayerInput();
     };
@@ -240,46 +279,29 @@
     };
 
     module.playerInputKeyupHandler = function(e) {
-        module.status.lastVal = $(this).val();
+        module.status.lastVal = $(this).val().toLowerCase();
 
         if (e.which == $.ui.keyCode.ENTER) {
-            module.performAction();
+            module.performAction(module.getTokens());
             $(this).val('');
             module.status.lastVal = '';
             module.status.lastKey = '';
         }
     };
 
-    module.playerInputSubmitHandler = function(e) {
-        module.getTokens();
-
-        module.performAction();
-    };
-
-    module.getTokens = function() {
-        var tokens = module.status.lastVal.split(' ');
-
-        module.status.lastTokens = tokens;
-
-        return tokens;
-    };
-
-    module.performAction = function() {
-        var tokens = module.getTokens();
-        var verb = tokens[0];
-
-        if (!tokens[1]) {
+    module.performAction = function(tokens) {
+        if (!tokens.subject) {
             // no subject
-            if (module.actions[verb]) {
+            if (module.actions[tokens.verb]) {
                 // the verb is still valid, so let's execute that
-                var text = module.actions[verb](tokens);
+                var text = module.actions[tokens.verb](tokens);
             } else {
                 var text = module.actions.unknown(tokens);
             }
         } else {
-            var subject = module.getObjFromName(tokens[1]);
-            if (typeof subject[verb] == 'function') {
-                var text = subject[verb](tokens);
+            var subject = module.getObjFromName(tokens.subject);
+            if (typeof subject[tokens.verb] == 'function') {
+                var text = subject[tokens.verb](tokens);
             } else if (typeof subject.all == 'function') {
                 // subject has an 'all' action so we can fall back to that
                 var text = subject.all(tokens);
@@ -289,6 +311,61 @@
         }
 
         module.output(text);
+    };
+
+    module.buildVerbList = function() {
+        var verbs = [];
+
+        for (var i in module.actions) {
+            if (typeof module.actions[i] == 'function' && $.inArray(i, verbs) == -1 && $.inArray(i, module.reserved) == -1) {
+                verbs.push(i);
+            }
+        }
+
+        for (var k in module.objects) {
+            var obj = module.objects[k];
+
+            for (var j in obj) {
+                var action = obj[j];
+                if (typeof action == 'function' && $.inArray(j, verbs) == -1 && $.inArray(j, module.reserved) == -1) {
+                    verbs.push(j);
+                }
+            }
+        }
+
+        module.verbs = verbs;
+    };
+
+    module.getTokens = function() {
+        var str = module.status.lastVal;
+        var verb = "";
+        var subject = "";
+
+        for (var i in module.synonyms) {
+            var syn = module.synonyms[i];
+
+            str = str.replace(i, syn);
+        }
+
+        var tokens = str.split(' ');
+
+        if (module.abbreviations[tokens[0]]) {
+            verb = module.abbreviations[tokens[0]];
+        } else if (tokens[0] && $.inArray(tokens[0], module.verbs) !== -1) {
+            verb = tokens[0];
+        }
+
+        if (tokens[1]) {
+            subject = tokens[1];
+        }
+
+        console.log( verb, subject );
+
+        return {
+            verb: verb,
+            subject: subject
+        };
+        
     };
 
     module.getObjFromName = function(name) {
@@ -324,9 +401,11 @@
     module.output = function(output) {
         var $outputBlock = module.elements.$outputBlockTemplate.clone();
 
-        $outputBlock.html(output);
+        $outputBlock.html(output).hide();
 
         module.elements.$output.prepend($outputBlock);
+
+        $outputBlock.fadeIn();
     };
 
     $(document).ready(function() {
